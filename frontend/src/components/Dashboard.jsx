@@ -27,6 +27,18 @@ function Dashboard({ onNavigateToChat }) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalTraces, setTotalTraces] = useState(0)
+  const [healthStatus, setHealthStatus] = useState(null)
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`)
+      if (!response.ok) throw new Error('Health check failed')
+      const data = await response.json()
+      setHealthStatus(data)
+    } catch (err) {
+      setHealthStatus({ status: 'offline', database: 'unknown' })
+    }
+  }, [])
 
   const fetchAnalytics = useCallback(async (showRefreshIndicator = false) => {
     if (showRefreshIndicator) setIsRefreshing(true)
@@ -79,11 +91,13 @@ function Dashboard({ onNavigateToChat }) {
   const refreshData = useCallback(() => {
     fetchAnalytics(true)
     fetchTraces(categoryFilter, currentPage)
-  }, [fetchAnalytics, fetchTraces, categoryFilter, currentPage])
+    fetchHealth()
+  }, [fetchAnalytics, fetchTraces, fetchHealth, categoryFilter, currentPage])
 
   useEffect(() => {
     fetchAnalytics()
-  }, [fetchAnalytics])
+    fetchHealth()
+  }, [fetchAnalytics, fetchHealth])
 
   useEffect(() => {
     fetchTraces(categoryFilter, currentPage)
@@ -191,6 +205,19 @@ function Dashboard({ onNavigateToChat }) {
         <div className="metrics-row">
           <div className="metric-card"><div className="metric-label">Total Traces</div><div className="metric-value">{analytics?.total_count ?? 0}</div></div>
           <div className="metric-card"><div className="metric-label">Avg Response Time</div><div className="metric-value">{analytics?.average_response_time_ms?.toFixed(1) ?? 0}<span className="metric-unit">ms</span></div></div>
+          <div className="metric-card health-card">
+            <div className="metric-label">Backend Status</div>
+            <div className="health-status">
+              <span className={`health-indicator ${healthStatus?.status === 'healthy' ? 'healthy' : healthStatus?.status === 'degraded' ? 'degraded' : 'offline'}`}></span>
+              <span className="health-text">{healthStatus?.status === 'healthy' ? 'Healthy' : healthStatus?.status === 'degraded' ? 'Degraded' : 'Offline'}</span>
+            </div>
+            <div className="health-details">
+              <span className="health-detail-label">Database:</span>
+              <span className={`health-detail-value ${healthStatus?.database === 'healthy' ? 'healthy' : 'unhealthy'}`}>
+                {healthStatus?.database === 'healthy' ? 'Connected' : healthStatus?.database || 'Unknown'}
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="category-section">

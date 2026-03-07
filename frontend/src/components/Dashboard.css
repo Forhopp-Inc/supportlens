@@ -100,7 +100,7 @@
 }
 
 .retry-button:hover { background: var(--accent-hover); }
-.metrics-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 24px; }
+.metrics-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
 
 .metric-card {
   background: var(--bg-secondary);
@@ -127,6 +127,19 @@
 .metric-label { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 .metric-value { font-size: 2.5rem; font-weight: 700; color: var(--text-primary); }
 .metric-unit { font-size: 1rem; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
+
+.health-card { text-align: left; }
+.health-status { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.health-indicator { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.health-indicator.healthy { background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5); }
+.health-indicator.degraded { background: #F59E0B; box-shadow: 0 0 8px rgba(245, 158, 11, 0.5); }
+.health-indicator.offline { background: #EF4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+.health-text { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+.health-details { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; }
+.health-detail-label { color: var(--text-muted); }
+.health-detail-value { font-weight: 500; }
+.health-detail-value.healthy { color: #10B981; }
+.health-detail-value.unhealthy { color: #EF4444; }
 
 .category-section { background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-color); transition: background-color 0.3s ease; }
 .category-section h2 { font-size: 0.9rem; color: var(--text-primary); margin-bottom: 20px; font-weight: 600; }
@@ -202,6 +215,9 @@
   .metrics-row { grid-template-columns: 1fr; gap: 12px; }
   .metric-card { padding: 20px 16px; }
   .metric-value { font-size: 2rem; }
+  .health-card { text-align: center; }
+  .health-status { justify-content: center; }
+  .health-details { justify-content: center; }
   .category-item { grid-template-columns: 1fr; gap: 8px; }
   .category-stats { justify-content: flex-start; }
   .trace-section-header { flex-direction: column; align-items: stretch; }

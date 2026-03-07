@@ -7,7 +7,7 @@ function Chatbot({ onNavigateToDashboard }) {
   const [messages, setMessages] = useState([
     { 
       id: 1, 
-      content: "Hi there! 👋 I'm here to help with your billing questions. What can I assist you with today?", 
+      content: "Hi there! 👋 I'm here to help with your questions. What can I assist you with today?", 
       isUser: false,
       time: new Date()
     }

@@ -1,0 +1,122 @@
+"""
+Pydantic schemas for SupportLens API validation.
+Defines request/response models with input validation.
+"""
+
+from datetime import datetime
+from pydantic import BaseModel, Field, field_validator
+
+from backend.models import Category
+
+
+# Validation constants
+MAX_MESSAGE_LENGTH = 2000
+MAX_RESPONSE_LENGTH = 4000
+MIN_RESPONSE_TIME = 0
+MAX_RESPONSE_TIME = 300000  # 5 minutes in milliseconds
+
+
+class TraceCreate(BaseModel):
+    """Schema for creating a new trace via POST /traces."""
+    user_message: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MESSAGE_LENGTH,
+        description="The customer's support message"
+    )
+    bot_response: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_RESPONSE_LENGTH,
+        description="The chatbot's response"
+    )
+    response_time_ms: int = Field(
+        ...,
+        ge=MIN_RESPONSE_TIME,
+        le=MAX_RESPONSE_TIME,
+        description="Time taken to generate response in milliseconds"
+    )
+
+    @field_validator('user_message', 'bot_response')
+    @classmethod
+    def validate_not_empty_or_whitespace(cls, v: str) -> str:
+        """Ensure messages are not just whitespace."""
+        if not v.strip():
+            raise ValueError('Message cannot be empty or whitespace only')
+        return v
+
+
+class TraceResponse(BaseModel):
+    """Schema for trace response from API."""
+    id: str = Field(..., description="Unique trace identifier")
+    user_message: str = Field(..., description="The customer's support message")
+    bot_response: str = Field(..., description="The chatbot's response")
+    category: Category = Field(..., description="Classification category")
+    timestamp: datetime = Field(..., description="When the trace was recorded")
+    response_time_ms: int = Field(..., description="Response time in milliseconds")
+
+    model_config = {"from_attributes": True}
+
+
+class ChatMessage(BaseModel):
+    """Schema for a single message in conversation history."""
+    role: str = Field(..., description="Message role: 'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
+
+
+class ChatRequest(BaseModel):
+    """Schema for chat request via POST /chat."""
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_MESSAGE_LENGTH,
+        description="The user's chat message"
+    )
+    history: list[ChatMessage] = Field(
+        default=[],
+        description="Conversation history for context"
+    )
+
+    @field_validator('message')
+    @classmethod
+    def validate_not_empty_or_whitespace(cls, v: str) -> str:
+        """Ensure message is not just whitespace."""
+        if not v.strip():
+            raise ValueError('Message cannot be empty or whitespace only')
+        return v
+
+
+class ChatResponse(BaseModel):
+    """Schema for chat response from POST /chat."""
+    response: str = Field(..., description="The chatbot's response")
+    trace_id: str = Field(..., description="ID of the created trace")
+
+
+class CategoryBreakdown(BaseModel):
+    """Schema for category statistics in analytics."""
+    category: Category = Field(..., description="The category")
+    count: int = Field(..., ge=0, description="Number of traces in this category")
+    percentage: float = Field(..., ge=0, le=100, description="Percentage of total traces")
+
+
+class AnalyticsResponse(BaseModel):
+    """Schema for analytics response from GET /analytics."""
+    total_count: int = Field(..., ge=0, description="Total number of traces")
+    category_breakdown: list[CategoryBreakdown] = Field(
+        ...,
+        description="Breakdown by category with count and percentage"
+    )
+    average_response_time_ms: float = Field(
+        ...,
+        ge=0,
+        description="Average response time across all traces"
+    )
+
+
+class PaginatedTracesResponse(BaseModel):
+    """Schema for paginated traces response from GET /traces."""
+    traces: list[TraceResponse] = Field(..., description="List of traces for current page")
+    total: int = Field(..., ge=0, description="Total number of traces")
+    page: int = Field(..., ge=1, description="Current page number")
+    page_size: int = Field(..., ge=1, description="Number of items per page")
+    total_pages: int = Field(..., ge=1, description="Total number of pages")

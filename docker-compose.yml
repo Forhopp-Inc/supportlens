@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=3306
+      - DATABASE_NAME=supportlens
+      - DATABASE_USER=root
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-supportlens123}
+      - DATABASE_TYPE=mysql
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DEBUG=false
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - supportlens-network
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DATABASE_PASSWORD:-supportlens123}
+      - MYSQL_DATABASE=supportlens
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - supportlens-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - supportlens-network
+    restart: unless-stopped
+
+networks:
+  supportlens-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

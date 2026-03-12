@@ -3,6 +3,15 @@ import './Chatbot.css'
 
 const API_BASE_URL = 'http://localhost:8000'
 
+// Generate a unique session ID
+const generateSessionId = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
+
 function Chatbot({ onNavigateToDashboard }) {
   const [messages, setMessages] = useState([
     { 
@@ -15,8 +24,33 @@ function Chatbot({ onNavigateToDashboard }) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [systemStatus, setSystemStatus] = useState({ status: 'healthy', dbAvailable: true })
+  const [sessionId] = useState(() => generateSessionId()) // Generate once per chat session
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+
+  // Check system health on mount and periodically
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/health`)
+        if (response.ok) {
+          const data = await response.json()
+          setSystemStatus({
+            status: data.status,
+            dbAvailable: data.dependencies?.database?.status === 'healthy',
+            llmAvailable: data.dependencies?.llm?.status === 'healthy'
+          })
+        }
+      } catch {
+        setSystemStatus({ status: 'offline', dbAvailable: false, llmAvailable: false })
+      }
+    }
+    
+    checkHealth()
+    const interval = setInterval(checkHealth, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -57,7 +91,7 @@ function Chatbot({ onNavigateToDashboard }) {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history })
+        body: JSON.stringify({ message, session_id: sessionId, history })
       })
 
       if (!response.ok) {
@@ -66,11 +100,18 @@ function Chatbot({ onNavigateToDashboard }) {
       }
 
       const data = await response.json()
+      
+      // Update system status based on trace_stored flag
+      if (data.trace_stored === false) {
+        setSystemStatus(prev => ({ ...prev, dbAvailable: false }))
+      }
+      
       setMessages(prev => [...prev, { 
         id: Date.now(), 
         content: data.response, 
         isUser: false,
-        time: new Date()
+        time: new Date(),
+        notStored: data.trace_stored === false
       }])
     } catch (err) {
       console.error('Chat error:', err)
@@ -97,7 +138,10 @@ function Chatbot({ onNavigateToDashboard }) {
           <div className="chat-avatar">S</div>
           <div className="chat-header-info">
             <h1>SupportLens</h1>
-            <p><span className="status-dot"></span>Online</p>
+            <p><span className={`status-dot ${systemStatus.status !== 'healthy' ? 'degraded' : ''}`}></span>
+              {systemStatus.status === 'healthy' ? 'Online' : 
+               systemStatus.status === 'degraded' ? 'Limited Mode' : 'Offline'}
+            </p>
           </div>
         </div>
         <button className="dashboard-btn" onClick={onNavigateToDashboard} aria-label="Open Dashboard">
@@ -110,6 +154,16 @@ function Chatbot({ onNavigateToDashboard }) {
           Dashboard
         </button>
       </div>
+
+      {!systemStatus.dbAvailable && systemStatus.status !== 'offline' && (
+        <div className="degraded-banner" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Limited Mode: Chat is available but conversations are not being saved.</span>
+        </div>
+      )}
 
       <div className="chat-messages">
         {messages.map(msg => (

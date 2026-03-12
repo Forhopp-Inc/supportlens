@@ -4,14 +4,15 @@ Loads environment variables and provides database connection settings.
 """
 
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     # Database settings
     database_host: str = "localhost"
     database_port: int = 3306
@@ -19,17 +20,17 @@ class Settings(BaseSettings):
     database_user: str = "root"
     database_password: str = ""
     database_type: str = "mysql"  # mysql or postgresql
-    
+
     # Gemini API settings
     gemini_api_key: str = ""
-    
+
     # Application settings
     debug: bool = False
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-    
+
     @property
     def database_url(self) -> str:
         """Construct database URL from settings."""

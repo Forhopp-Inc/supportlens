@@ -6,15 +6,13 @@ Provides chatbot response generation and trace classification.
 import logging
 import re
 import time
-from typing import Optional
 
 from google import genai
-from google.genai import types
 from google.api_core import exceptions as google_exceptions
+from google.genai import types
 
 from backend.config import get_settings
 from backend.models import Category
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +85,14 @@ def clean_markdown(text: str) -> str:
 
 class GeminiClient:
     """Client for interacting with the Gemini API."""
-    
-    def __init__(self, api_key: Optional[str] = None):
+
+    def __init__(self, api_key: str | None = None):
         settings = get_settings()
         self.api_key = api_key or settings.gemini_api_key
         self.client = genai.Client(api_key=self.api_key)
         self.model_name = "gemini-2.0-flash"
         self._valid_categories = {cat.value for cat in Category}
-    
+
     def generate_response(
         self,
         message: str,
@@ -103,7 +101,7 @@ class GeminiClient:
         initial_backoff: float = 1.0
     ) -> str:
         """Generate a chatbot response for a customer support message.
-        
+
         Args:
             message: The current user message
             history: Optional conversation history as list of {"role": "user"|"assistant", "content": str}
@@ -113,7 +111,7 @@ class GeminiClient:
         attempt = 0
         last_exception = None
         backoff = initial_backoff
-        
+
         # Build contents with conversation history
         contents = []
         if history:
@@ -123,13 +121,13 @@ class GeminiClient:
                     role=role,
                     parts=[types.Part(text=msg.get("content", ""))]
                 ))
-        
+
         # Add current message
         contents.append(types.Content(
             role="user",
             parts=[types.Part(text=message)]
         ))
-        
+
         while attempt <= max_retries:
             try:
                 response = self.client.models.generate_content(
@@ -141,32 +139,60 @@ class GeminiClient:
                         system_instruction=SUPPORT_AGENT_PROMPT
                     )
                 )
-                
+
                 if response.text:
                     return clean_markdown(response.text.strip())
-                
+
                 raise ValueError("Empty response from Gemini API")
-                
+
             except google_exceptions.DeadlineExceeded as e:
-                logger.warning(f"Gemini API timeout (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Gemini API timeout",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": "timeout",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "message_length": len(message),
+                        "history_length": len(history) if history else 0
+                    }
+                )
                 last_exception = e
                 attempt += 1
-                
+
             except google_exceptions.ResourceExhausted as e:
-                logger.warning(f"Gemini API rate limit (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Gemini API rate limited",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": "rate_limit",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "backoff_seconds": backoff
+                    }
+                )
                 last_exception = e
                 if attempt < max_retries:
                     time.sleep(backoff)
                     backoff *= 2
                 attempt += 1
-                
+
             except Exception as e:
-                logger.error(f"Gemini API error (attempt {attempt + 1}): {e}")
+                logger.error(
+                    "Gemini API error",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": type(e).__name__,
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "message_length": len(message)
+                    }
+                )
                 last_exception = e
                 attempt += 1
-        
+
         raise last_exception or Exception("Failed to generate response")
-    
+
     def classify_trace(
         self,
         user_message: str,
@@ -175,11 +201,11 @@ class GeminiClient:
     ) -> Category:
         """Classify a support message into a category using the Gemini API."""
         prompt = CLASSIFICATION_PROMPT.format(user_message=user_message)
-        
+
         attempt = 0
         last_exception = None
         backoff = initial_backoff
-        
+
         while attempt <= max_retries:
             try:
                 response = self.client.models.generate_content(
@@ -190,38 +216,86 @@ class GeminiClient:
                         max_output_tokens=20,
                     )
                 )
-                
+
                 if response.text:
                     category_text = response.text.strip()
-                    return self._parse_category(category_text)
-                
+                    category = self._parse_category(category_text, user_message)
+
+                    # Log successful classification
+                    logger.debug(
+                        "Classification successful",
+                        extra={
+                            "type": "classification_success",
+                            "category": category.value,
+                            "raw_response": category_text,
+                            "user_message_length": len(user_message)
+                        }
+                    )
+                    return category
+
                 raise ValueError("Empty response from Gemini API")
-                
+
             except google_exceptions.DeadlineExceeded as e:
-                logger.warning(f"Classification timeout (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Classification timeout",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "timeout",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
-                
+
             except google_exceptions.ResourceExhausted as e:
-                logger.warning(f"Classification rate limit (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Classification rate limited",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "rate_limit",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "backoff_seconds": backoff
+                    }
+                )
                 last_exception = e
                 if attempt < max_retries:
                     time.sleep(backoff)
                     backoff *= 2
                 attempt += 1
-                
+
             except ValueError as e:
-                logger.warning(f"Invalid classification response (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Invalid classification response",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "invalid_response",
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
-                
+
             except Exception as e:
-                logger.error(f"Classification error (attempt {attempt + 1}): {e}")
+                logger.error(
+                    "Classification failed",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": type(e).__name__,
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
-        
+
         raise last_exception or Exception("Failed to classify trace")
-    
+
     def classify_trace_safe(
         self,
         user_message: str,
@@ -239,26 +313,39 @@ class GeminiClient:
             logger.error(f"Classification failed, fallback to General_Inquiry: {e}")
             return Category.General_Inquiry
 
-    def _parse_category(self, category_text: str) -> Category:
+    def _parse_category(self, category_text: str, user_message: str = "") -> Category:
         """Parse and validate a category string from the API response."""
         cleaned = category_text.strip()
-        
+
         # Direct match
         if cleaned in self._valid_categories:
             return Category(cleaned)
-        
+
         # Case-insensitive match
         for valid_cat in self._valid_categories:
             if cleaned.lower() == valid_cat.lower():
                 return Category(valid_cat)
-        
+
         # Handle variations (e.g., "Account Access" vs "Account_Access")
         normalized = cleaned.replace(" ", "_").replace("-", "_")
         if normalized in self._valid_categories:
             return Category(normalized)
-        
+
         for valid_cat in self._valid_categories:
             if normalized.lower() == valid_cat.lower():
                 return Category(valid_cat)
-        
+
+        # Log unexpected classification with full context for debugging
+        logger.warning(
+            "Unexpected LLM classification response",
+            extra={
+                "type": "classification_unexpected",
+                "raw_response": category_text,
+                "cleaned_response": cleaned,
+                "normalized_response": normalized,
+                "valid_categories": list(self._valid_categories),
+                "user_message_preview": user_message[:100] if user_message else ""
+            }
+        )
+
         raise ValueError(f"Invalid category: {category_text}")

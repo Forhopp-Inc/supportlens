@@ -4,7 +4,6 @@ Tests analytics calculations including total count, category breakdown, and aver
 """
 
 from datetime import datetime
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +14,6 @@ from sqlalchemy.pool import StaticPool
 from backend.config import Base, get_db
 from backend.main import app
 from backend.models import Category, TraceDB
-
 
 # In-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -31,18 +29,18 @@ def test_db():
     )
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    
+
     def override_get_db():
         db = TestingSessionLocal()
         try:
             yield db
         finally:
             db.close()
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     yield TestingSessionLocal()
-    
+
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
 
@@ -59,14 +57,14 @@ class TestAnalyticsEndpoint:
     def test_empty_database_returns_zeros(self, client):
         """
         When no traces exist, analytics returns zeros and empty breakdown.
-        
+
         **Validates: Requirements 4.4**
         """
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["total_count"] == 0
         assert data["category_breakdown"] == []
         assert data["average_response_time_ms"] == 0.0
@@ -74,7 +72,7 @@ class TestAnalyticsEndpoint:
     def test_single_trace_analytics(self, client, test_db):
         """
         With a single trace, analytics returns correct values.
-        
+
         **Validates: Requirements 4.1, 4.2, 4.3**
         """
         # Create a trace directly in the database
@@ -88,12 +86,12 @@ class TestAnalyticsEndpoint:
         )
         test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["total_count"] == 1
         assert len(data["category_breakdown"]) == 1
         assert data["category_breakdown"][0]["category"] == "Billing"
@@ -104,7 +102,7 @@ class TestAnalyticsEndpoint:
     def test_multiple_traces_same_category(self, client, test_db):
         """
         With multiple traces in the same category, analytics calculates correctly.
-        
+
         **Validates: Requirements 4.1, 4.2, 4.3**
         """
         # Create multiple traces in the same category
@@ -119,12 +117,12 @@ class TestAnalyticsEndpoint:
             )
             test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["total_count"] == 3
         assert len(data["category_breakdown"]) == 1
         assert data["category_breakdown"][0]["category"] == "Refund"
@@ -136,7 +134,7 @@ class TestAnalyticsEndpoint:
     def test_multiple_categories_breakdown(self, client, test_db):
         """
         With traces in multiple categories, breakdown shows correct counts and percentages.
-        
+
         **Validates: Requirements 4.1, 4.2, 4.3**
         """
         # Create traces in different categories
@@ -146,7 +144,7 @@ class TestAnalyticsEndpoint:
             (Category.Refund, 150),
             (Category.Account_Access, 250),
         ]
-        
+
         for i, (category, response_time) in enumerate(categories_data):
             trace = TraceDB(
                 id=f"test-id-{i}",
@@ -158,36 +156,36 @@ class TestAnalyticsEndpoint:
             )
             test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["total_count"] == 4
-        
+
         # Convert breakdown to dict for easier assertions
         breakdown_dict = {item["category"]: item for item in data["category_breakdown"]}
-        
+
         # Billing: 2 traces = 50%
         assert breakdown_dict["Billing"]["count"] == 2
         assert breakdown_dict["Billing"]["percentage"] == 50.0
-        
+
         # Refund: 1 trace = 25%
         assert breakdown_dict["Refund"]["count"] == 1
         assert breakdown_dict["Refund"]["percentage"] == 25.0
-        
+
         # Account_Access: 1 trace = 25%
         assert breakdown_dict["Account_Access"]["count"] == 1
         assert breakdown_dict["Account_Access"]["percentage"] == 25.0
-        
+
         # Average: (100 + 200 + 150 + 250) / 4 = 175
         assert data["average_response_time_ms"] == 175.0
 
     def test_all_five_categories(self, client, test_db):
         """
         With traces in all five categories, breakdown includes all categories.
-        
+
         **Validates: Requirements 4.1, 4.2, 4.3**
         """
         # Create one trace per category
@@ -198,7 +196,7 @@ class TestAnalyticsEndpoint:
             Category.Cancellation,
             Category.General_Inquiry,
         ]
-        
+
         for i, category in enumerate(all_categories):
             trace = TraceDB(
                 id=f"test-id-{i}",
@@ -210,27 +208,27 @@ class TestAnalyticsEndpoint:
             )
             test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["total_count"] == 5
         assert len(data["category_breakdown"]) == 5
-        
+
         # Each category should have 1 trace = 20%
         for item in data["category_breakdown"]:
             assert item["count"] == 1
             assert item["percentage"] == 20.0
-        
+
         # Average: 100 (all same)
         assert data["average_response_time_ms"] == 100.0
 
     def test_category_breakdown_sums_to_total(self, client, test_db):
         """
         The sum of category counts equals total_count.
-        
+
         **Validates: Requirements 4.1, 4.2**
         """
         # Create various traces
@@ -246,12 +244,12 @@ class TestAnalyticsEndpoint:
             )
             test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Sum of category counts should equal total
         category_sum = sum(item["count"] for item in data["category_breakdown"])
         assert category_sum == data["total_count"]
@@ -259,7 +257,7 @@ class TestAnalyticsEndpoint:
     def test_percentages_sum_to_100(self, client, test_db):
         """
         The sum of category percentages equals 100% (within floating point tolerance).
-        
+
         **Validates: Requirements 4.2**
         """
         # Create various traces
@@ -275,12 +273,12 @@ class TestAnalyticsEndpoint:
             )
             test_db.add(trace)
         test_db.commit()
-        
+
         response = client.get("/analytics")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Sum of percentages should be approximately 100%
         percentage_sum = sum(item["percentage"] for item in data["category_breakdown"])
         assert abs(percentage_sum - 100.0) < 0.01, f"Percentages sum to {percentage_sum}, expected ~100"

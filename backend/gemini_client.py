@@ -148,12 +148,31 @@ class GeminiClient:
                 raise ValueError("Empty response from Gemini API")
                 
             except google_exceptions.DeadlineExceeded as e:
-                logger.warning(f"Gemini API timeout (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Gemini API timeout",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": "timeout",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "message_length": len(message),
+                        "history_length": len(history) if history else 0
+                    }
+                )
                 last_exception = e
                 attempt += 1
                 
             except google_exceptions.ResourceExhausted as e:
-                logger.warning(f"Gemini API rate limit (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Gemini API rate limited",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": "rate_limit",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "backoff_seconds": backoff
+                    }
+                )
                 last_exception = e
                 if attempt < max_retries:
                     time.sleep(backoff)
@@ -161,7 +180,16 @@ class GeminiClient:
                 attempt += 1
                 
             except Exception as e:
-                logger.error(f"Gemini API error (attempt {attempt + 1}): {e}")
+                logger.error(
+                    "Gemini API error",
+                    extra={
+                        "type": "llm_error",
+                        "error_type": type(e).__name__,
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "message_length": len(message)
+                    }
+                )
                 last_exception = e
                 attempt += 1
         
@@ -193,17 +221,47 @@ class GeminiClient:
                 
                 if response.text:
                     category_text = response.text.strip()
-                    return self._parse_category(category_text)
+                    category = self._parse_category(category_text, user_message)
+                    
+                    # Log successful classification
+                    logger.debug(
+                        "Classification successful",
+                        extra={
+                            "type": "classification_success",
+                            "category": category.value,
+                            "raw_response": category_text,
+                            "user_message_length": len(user_message)
+                        }
+                    )
+                    return category
                 
                 raise ValueError("Empty response from Gemini API")
                 
             except google_exceptions.DeadlineExceeded as e:
-                logger.warning(f"Classification timeout (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Classification timeout",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "timeout",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
                 
             except google_exceptions.ResourceExhausted as e:
-                logger.warning(f"Classification rate limit (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Classification rate limited",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "rate_limit",
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "backoff_seconds": backoff
+                    }
+                )
                 last_exception = e
                 if attempt < max_retries:
                     time.sleep(backoff)
@@ -211,12 +269,30 @@ class GeminiClient:
                 attempt += 1
                 
             except ValueError as e:
-                logger.warning(f"Invalid classification response (attempt {attempt + 1}): {e}")
+                logger.warning(
+                    "Invalid classification response",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": "invalid_response",
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
                 
             except Exception as e:
-                logger.error(f"Classification error (attempt {attempt + 1}): {e}")
+                logger.error(
+                    "Classification failed",
+                    extra={
+                        "type": "classification_error",
+                        "error_type": type(e).__name__,
+                        "attempt": attempt + 1,
+                        "error_message": str(e),
+                        "user_message_preview": user_message[:100]
+                    }
+                )
                 last_exception = e
                 attempt += 1
         
@@ -239,7 +315,7 @@ class GeminiClient:
             logger.error(f"Classification failed, fallback to General_Inquiry: {e}")
             return Category.General_Inquiry
 
-    def _parse_category(self, category_text: str) -> Category:
+    def _parse_category(self, category_text: str, user_message: str = "") -> Category:
         """Parse and validate a category string from the API response."""
         cleaned = category_text.strip()
         
@@ -260,5 +336,18 @@ class GeminiClient:
         for valid_cat in self._valid_categories:
             if normalized.lower() == valid_cat.lower():
                 return Category(valid_cat)
+        
+        # Log unexpected classification with full context for debugging
+        logger.warning(
+            "Unexpected LLM classification response",
+            extra={
+                "type": "classification_unexpected",
+                "raw_response": category_text,
+                "cleaned_response": cleaned,
+                "normalized_response": normalized,
+                "valid_categories": list(self._valid_categories),
+                "user_message_preview": user_message[:100] if user_message else ""
+            }
+        )
         
         raise ValueError(f"Invalid category: {category_text}")

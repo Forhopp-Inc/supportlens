@@ -72,3 +72,6 @@ mysql_data/
 
 # Docker
 docker-compose.override.yml
+
+# Ruff cache
+.ruff_cache/

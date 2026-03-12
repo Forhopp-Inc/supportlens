@@ -26,6 +26,7 @@ class TraceDB(Base):
     
     Attributes:
         id: Unique UUID identifier for the trace
+        session_id: UUID linking messages in the same conversation
         user_message: The customer's support message
         bot_response: The chatbot's response
         category: Classification category for the trace
@@ -35,6 +36,7 @@ class TraceDB(Base):
     __tablename__ = "traces"
     
     id = Column(String(36), primary_key=True)  # UUID
+    session_id = Column(String(36), nullable=True, index=True)  # Conversation session UUID
     user_message = Column(String(2000), nullable=False)
     bot_response = Column(String(4000), nullable=False)
     category = Column(SQLEnum(Category), nullable=False)
@@ -45,7 +47,8 @@ class TraceDB(Base):
     __table_args__ = (
         Index('idx_category', 'category'),
         Index('idx_timestamp', 'timestamp'),
+        Index('idx_session_id', 'session_id'),
     )
     
     def __repr__(self) -> str:
-        return f"<TraceDB(id={self.id}, category={self.category}, timestamp={self.timestamp})>"
+        return f"<TraceDB(id={self.id}, session_id={self.session_id}, category={self.category})>"

@@ -3,13 +3,14 @@ Unit tests for the Gemini API client.
 Tests the GeminiClient class methods and error handling.
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 
 from backend.gemini_client import (
-    GeminiClient,
     CLASSIFICATION_PROMPT,
     SUPPORT_AGENT_PROMPT,
+    GeminiClient,
 )
 from backend.models import Category
 
@@ -21,9 +22,9 @@ class TestGeminiClientInit:
         """Verify client has all valid categories for validation."""
         with patch('backend.gemini_client.genai'):
             client = GeminiClient(api_key="test-key")
-            
+
             expected_categories = {
-                "Billing", "Refund", "Account_Access", 
+                "Billing", "Refund", "Account_Access",
                 "Cancellation", "General_Inquiry"
             }
             assert client._valid_categories == expected_categories
@@ -132,7 +133,7 @@ class TestClassificationPrompt:
         billing_pos = CLASSIFICATION_PROMPT.find("BILLING")
         account_pos = CLASSIFICATION_PROMPT.find("ACCOUNT_ACCESS")
         general_pos = CLASSIFICATION_PROMPT.find("GENERAL_INQUIRY")
-        
+
         # Cancellation should come before Refund, which should come before Billing, etc.
         assert cancellation_pos < refund_pos < billing_pos < account_pos < general_pos
 
@@ -170,24 +171,24 @@ class TestClassifyTraceSafeFallback:
     def test_fallback_on_timeout(self, client):
         """Test fallback to General_Inquiry on API timeout."""
         from google.api_core import exceptions as google_exceptions
-        
+
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = google_exceptions.DeadlineExceeded("Timeout")
-            
+
             result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             mock_classify.assert_called_once()
 
     def test_fallback_on_rate_limit(self, client):
         """Test fallback to General_Inquiry on API rate limit."""
         from google.api_core import exceptions as google_exceptions
-        
+
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = google_exceptions.ResourceExhausted("Rate limited")
-            
+
             result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             mock_classify.assert_called_once()
 
@@ -195,9 +196,9 @@ class TestClassifyTraceSafeFallback:
         """Test fallback to General_Inquiry on invalid API response."""
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = ValueError("Invalid category: Unknown")
-            
+
             result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             mock_classify.assert_called_once()
 
@@ -205,9 +206,9 @@ class TestClassifyTraceSafeFallback:
         """Test fallback to General_Inquiry on network failure."""
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = ConnectionError("Network unreachable")
-            
+
             result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             mock_classify.assert_called_once()
 
@@ -215,9 +216,9 @@ class TestClassifyTraceSafeFallback:
         """Test fallback to General_Inquiry on any generic exception."""
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = Exception("Unexpected error")
-            
+
             result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             mock_classify.assert_called_once()
 
@@ -225,9 +226,9 @@ class TestClassifyTraceSafeFallback:
         """Test that successful classification returns the correct category."""
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.return_value = Category.Billing
-            
+
             result = client.classify_trace_safe("I have a billing question")
-            
+
             assert result == Category.Billing
             mock_classify.assert_called_once_with(
                 user_message="I have a billing question",
@@ -238,13 +239,13 @@ class TestClassifyTraceSafeFallback:
     def test_fallback_logs_error(self, client, caplog):
         """Test that fallback logs the error for debugging."""
         import logging
-        
+
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.side_effect = ValueError("Invalid category: BadCategory")
-            
+
             with caplog.at_level(logging.ERROR):
                 result = client.classify_trace_safe("Test message")
-            
+
             assert result == Category.General_Inquiry
             assert "Classification failed" in caplog.text
             assert "General_Inquiry" in caplog.text
@@ -254,13 +255,13 @@ class TestClassifyTraceSafeFallback:
         """Test that classify_trace_safe passes parameters to classify_trace."""
         with patch.object(client, 'classify_trace') as mock_classify:
             mock_classify.return_value = Category.Refund
-            
+
             result = client.classify_trace_safe(
                 user_message="I want a refund",
                 max_retries=3,
                 initial_backoff=2.0
             )
-            
+
             assert result == Category.Refund
             mock_classify.assert_called_once_with(
                 user_message="I want a refund",

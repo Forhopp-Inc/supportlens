@@ -1,18 +1,29 @@
+# SupportLens Docker Compose Configuration
+# Production-ready setup with health checks and proper networking
+
 services:
+  # ==========================================================================
+  # Backend API Service
+  # ==========================================================================
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: production
     ports:
       - "8000:8000"
     environment:
+      # Database configuration
       - DATABASE_HOST=db
       - DATABASE_PORT=3306
       - DATABASE_NAME=supportlens
       - DATABASE_USER=root
       - DATABASE_PASSWORD=${DATABASE_PASSWORD:-supportlens123}
       - DATABASE_TYPE=mysql
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # LLM configuration - passed from host environment
+      # Can be changed without rebuilding images
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Application settings
       - DEBUG=false
     depends_on:
       db:
@@ -20,7 +31,23 @@ services:
     networks:
       - supportlens-network
     restart: unless-stopped
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
+  # ==========================================================================
+  # MySQL Database Service
+  # ==========================================================================
   db:
     image: mysql:8.0
     environment:
@@ -29,31 +56,67 @@ services:
     ports:
       - "3306:3306"
     volumes:
+      # Named volume for data persistence across restarts
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DATABASE_PASSWORD:-supportlens123}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - supportlens-network
     restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
+  # ==========================================================================
+  # Frontend Service (Production Build with Nginx)
+  # ==========================================================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: production
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - supportlens-network
     restart: unless-stopped
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
+# ==========================================================================
+# Networks
+# ==========================================================================
 networks:
   supportlens-network:
     driver: bridge
 
+# ==========================================================================
+# Volumes
+# ==========================================================================
 volumes:
+  # Named volume ensures data persists across docker-compose down/up cycles
+  # Only docker-compose down -v will delete the data
   mysql_data:
+    driver: local

@@ -91,9 +91,35 @@
   animation: pulse 2s infinite;
 }
 
+.status-dot.degraded {
+  background: #f59e0b;
+}
+
+.status-dot.offline {
+  background: #ef4444;
+  animation: none;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* Degraded Mode Banner */
+.degraded-banner {
+  background: linear-gradient(90deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #fcd34d;
+}
+
+.degraded-banner svg {
+  flex-shrink: 0;
+  color: #d97706;
 }
 
 .dashboard-btn {
